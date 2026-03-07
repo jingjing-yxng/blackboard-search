@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SC Blackboard Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div id="crtOverlay" class="crt-overlay"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-top">
+      <div class="header-brand">
+        <img src="../icons/icon48.png" alt="B" class="header-logo">
+        <h1>SC Blackboard Assistant</h1>
+      </div>
+      <div class="header-actions">
+        <button id="refreshBtn" title="Refresh index">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+            <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          </svg>
+        </button>
+        <button id="settingsBtn" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/>
+            <line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/>
+            <line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/>
+            <line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/>
+            <line x1="18" x2="22" y1="16" y2="16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="header-status">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText">No resources indexed</span>
+    </div>
+  </header>
+
+  <!-- Chat Area -->
+  <div id="chatArea" class="chat-area">
+  </div>
+
+  <!-- Input Bar -->
+  <div id="inputBar" class="input-bar">
+    <div class="input-wrapper">
+      <textarea id="queryInput" placeholder="Search your courses..." rows="1"></textarea>
+      <div class="keyboard-hint">Enter to send &middot; Shift+Enter for new line</div>
+    </div>
+    <button id="micBtn" class="mic-btn" title="Voice input">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" x2="12" y1="19" y2="22"/>
+      </svg>
+    </button>
+    <button id="sendBtn" class="send-btn" title="Send">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="footer-credit">Powered by C10 SCSA</div>
+
+  <!-- Settings Panel (slides up) -->
+  <div id="settingsPanel" class="settings-panel">
+    <div class="settings-header">
+      <button id="closeSettingsBtn" class="back-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+        Back
+      </button>
+      <h2>Settings</h2>
+    </div>
+    <div class="settings-body">
+      <!-- First-run setup (shown when no API key) -->
+      <div id="setupGuide" style="display: none;">
+        <section>
+          <h3>Choose your AI provider</h3>
+          <div class="provider-cards">
+            <div class="provider-card selected" data-provider="claude">
+              <div class="provider-icon">C</div>
+              <div class="provider-info">
+                <h4>Claude</h4>
+                <p>Anthropic &middot; Best quality</p>
+              </div>
+            </div>
+            <div class="provider-card" data-provider="openai">
+              <div class="provider-icon">O</div>
+              <div class="provider-info">
+                <h4>OpenAI</h4>
+                <p>GPT models &middot; Most popular</p>
+              </div>
+            </div>
+            <div class="provider-card" data-provider="deepseek">
+              <div class="provider-icon">D</div>
+              <div class="provider-info">
+                <h4>DeepSeek</h4>
+                <p>Open source &middot; Budget friendly</p>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="setupApiKey">API Key</label>
+            <input type="password" id="setupApiKey" placeholder="">
+            <div id="setupHelpText" class="help-text"></div>
+            <details class="whats-this">
+              <summary>What's an API key?</summary>
+              <div class="whats-this-body">
+                <p>An API key lets this extension talk to an AI model to understand your questions and find the right resources.</p>
+                <p>If you already have an account with OpenAI, Anthropic, or DeepSeek, use that. If not, <strong>DeepSeek is the cheapest option</strong> — most queries cost fractions of a cent.</p>
+                <p>To get a key:</p>
+                <ul>
+                  <li><strong>DeepSeek</strong> — <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a></li>
+                  <li><strong>OpenAI</strong> — <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></li>
+                  <li><strong>Claude</strong> — <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a></li>
+                </ul>
+                <p>Sign up, create a new key, and paste it above. Your key stays on your device — it's never sent anywhere except the AI provider.</p>
+              </div>
+            </details>
+          </div>
+          <div class="settings-actions">
+            <button id="setupSaveBtn" class="btn btn-primary">
+              <span class="btn-label">Save & Test</span>
+            </button>
+          </div>
+          <div id="setupStatus" class="status" style="display: none;"></div>
+        </section>
+      </div>
+
+      <!-- Standard settings (shown when API key exists) -->
+      <div id="standardSettings" style="display: none;">
+        <section>
+          <h3>LLM Provider</h3>
+          <div class="form-group">
+            <label for="provider">Provider</label>
+            <select id="provider">
+              <option value="claude">Claude (Anthropic)</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="apiKey">API Key</label>
+            <div class="input-with-action">
+              <input type="password" id="apiKey" placeholder="Enter your API key">
+              <button id="toggleKey" type="button">Show</button>
+            </div>
+            <details class="whats-this">
+              <summary>What's this?</summary>
+              <div class="whats-this-body">
+                <p>An API key lets this extension talk to an AI model to understand your questions. If you already have an account with OpenAI, Anthropic, or DeepSeek, use that. Otherwise, <strong>DeepSeek is the cheapest</strong>.</p>
+                <ul>
+                  <li><a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek</a> · <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI</a> · <a href="https://console.anthropic.com/settings/keys" target="_blank">Claude</a></li>
+                </ul>
+              </div>
+            </details>
+          </div>
+          <div class="form-group">
+            <label for="model">Model <span class="hint">(blank = default)</span></label>
+            <input type="text" id="model" placeholder="">
+          </div>
+          <div class="settings-actions">
+            <button id="saveBtn" class="btn btn-primary">Save</button>
+            <button id="validateBtn" class="btn btn-secondary">Test</button>
+          </div>
+          <div id="statusMessage" class="status" style="display: none;"></div>
+        </section>
+        <section>
+          <h3>Resource Index</h3>
+          <div class="index-info">
+            <span id="settingsIndexCount">0</span> resources indexed
+            <span id="settingsIndexUpdated"></span>
+          </div>
+          <div class="settings-actions">
+            <button id="exportBtn" class="btn btn-secondary">Export</button>
+            <button id="clearIndexBtn" class="btn btn-danger">Clear Index</button>
+          </div>
+        </section>
+        <section>
+          <h3>Chat History</h3>
+          <div class="settings-actions">
+            <button id="clearChatBtn" class="btn btn-danger">Clear Chat</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="../lib/llm-client.js"></script>
+  <script src="../lib/pdf.min.js"></script>
+  <script src="../lib/content-extractor.js"></script>
+  <script src="../lib/knowledge-base.js"></script>
+  <script src="../lib/prompts.js"></script>
+  <script src="../lib/index-builder.js"></script>
+  <script src="../lib/crawler.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
