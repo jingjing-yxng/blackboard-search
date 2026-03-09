@@ -605,6 +605,7 @@ header {
 }
 
 .ob-body p:last-child { margin-bottom: 0; }
+.ob-hint { font-size: var(--text-xs); opacity: 0.65; font-style: italic; }
 
 .ob-body a {
   color: var(--accent-light);

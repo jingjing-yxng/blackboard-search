@@ -288,6 +288,7 @@ async function renderOnboarding() {
     + '</div>'
     + '<div class="ob-body">'
     + '<p>Finding your course materials, documents, and announcements.</p>'
+    + '<p class="ob-hint">Keep your Blackboard tab open — feel free to browse other tabs while this runs.</p>'
     + '<div class="progress-bar"><div class="progress-fill" id="obFill"></div></div>'
     + '<div class="progress-text" id="obProgress">Starting\u2026</div>'
     + '</div>';
