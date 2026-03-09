@@ -22,6 +22,35 @@ const HINT_SHOW_COUNT = 3;
 const ICON_STOP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 const ICON_SEND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
 
+// ===== Theme toggle =====
+const themeBtn = document.getElementById('themeBtn');
+const ICON_SUN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+
+async function loadTheme() {
+  const { theme } = await chrome.storage.local.get('theme');
+  if (theme) {
+    applyTheme(theme);
+  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    applyTheme('light');
+  } else {
+    applyTheme('dark');
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  themeBtn.innerHTML = theme === 'dark' ? ICON_SUN : ICON_MOON;
+  themeBtn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+}
+
+themeBtn.addEventListener('click', async () => {
+  const current = document.documentElement.dataset.theme || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  await chrome.storage.local.set({ theme: next });
+});
+
 // ===== Resource ID computation (matches service worker) =====
 function computeResourceId(url) {
   let normalized;
@@ -77,22 +106,32 @@ const STALE_MS = 60 * 60 * 1000; // 1 hour
 
 // ===== Init =====
 async function init() {
+  await loadTheme();
   await loadSettings();
   await loadIndex();
   await loadChatHistory();
   updateInputState();
-  renderWelcomeOrEmpty();
   setupVoiceRecognition();
-  maybeAutoCrawl();
+
+  if (await isOnboardingComplete()) {
+    renderWelcomeOrEmpty();
+    maybeAutoCrawl();
+  } else {
+    renderOnboarding();
+  }
 }
 
 // Auto-crawl if index is empty or stale — no user action needed
 async function maybeAutoCrawl() {
+  // Skip if onboarding wizard is active
+  if (document.getElementById('onboardingWizard')) return;
+
   const { index_meta = {}, crawl_visited_at = 0 } = await chrome.storage.local.get(['index_meta', 'crawl_visited_at']);
   const indexAge = Date.now() - (index_meta.lastUpdated || 0);
   const cacheAge = Date.now() - crawl_visited_at;
 
   if (resources.length === 0) {
+    showIndexingScreen();
     startCrawl({ fullRecrawl: true });
   } else if (indexAge > STALE_MS) {
     const cacheStale = cacheAge > 24 * 60 * 60 * 1000;
@@ -139,24 +178,40 @@ function updateInputState() {
 }
 
 // ===== Onboarding state =====
-function getOnboardingStep() {
-  if (!settings || !settings.apiKey) return 1;
-  return 2;
+async function isOnboardingComplete() {
+  if (settings?.apiKey && resources.length > 0) return true;
+  const { onboarding_state } = await chrome.storage.local.get('onboarding_state');
+  return onboarding_state?.completed === true;
 }
+
+async function checkBlackboardTab() {
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://lms.sc.tsinghua.edu.cn/*' });
+    return tabs.length > 0;
+  } catch { return false; }
+}
+
+let obPollInterval = null;
+let obProvider = 'deepseek';
+
+const OB_PROVIDER_INFO = {
+  deepseek: { placeholder: 'sk-...', link: 'https://platform.deepseek.com/api_keys', label: 'platform.deepseek.com' },
+  openai: { placeholder: 'sk-...', link: 'https://platform.openai.com/api-keys', label: 'platform.openai.com' },
+  claude: { placeholder: 'sk-ant-...', link: 'https://console.anthropic.com/settings/keys', label: 'console.anthropic.com' }
+};
 
 // ===== Welcome / Empty =====
 function renderWelcomeOrEmpty() {
   if (chatArea.querySelector('.message')) return;
 
   chatArea.innerHTML = '';
-  const step = getOnboardingStep();
 
   const welcome = document.createElement('div');
   welcome.className = 'welcome-screen';
 
   const iconImg = document.createElement('img');
-  iconImg.src = '../icons/icon128.png';
-  iconImg.alt = 'B';
+  iconImg.src = '../icons/logo.png';
+  iconImg.alt = '';
   iconImg.className = 'welcome-logo';
   welcome.appendChild(iconImg);
 
@@ -175,7 +230,7 @@ function renderWelcomeOrEmpty() {
     const chip = document.createElement('button');
     chip.className = 'suggestion-chip';
     chip.textContent = text;
-    chip.disabled = step < 2;
+    chip.disabled = !settings?.apiKey;
     chip.addEventListener('click', () => {
       queryInput.value = text;
       sendQuery();
@@ -184,52 +239,254 @@ function renderWelcomeOrEmpty() {
   }
   welcome.appendChild(chips);
 
-  if (step === 1) {
-    const card = document.createElement('div');
-    card.className = 'onboarding-card';
-
-    const h3 = document.createElement('h3');
-    h3.textContent = 'Get started';
-    card.appendChild(h3);
-
-    const stepDiv = document.createElement('div');
-    stepDiv.className = 'onboarding-step active';
-
-    const indicator = document.createElement('div');
-    indicator.className = 'step-indicator';
-    indicator.textContent = '1';
-    stepDiv.appendChild(indicator);
-
-    const content = document.createElement('div');
-    content.className = 'step-content';
-    const label = document.createElement('span');
-    label.className = 'step-label';
-    label.textContent = 'Connect your AI to start searching';
-    content.appendChild(label);
-    stepDiv.appendChild(content);
-
-    const action = document.createElement('button');
-    action.className = 'step-action';
-    action.textContent = 'Set up';
-    action.addEventListener('click', () => showSettingsPanel());
-    stepDiv.appendChild(action);
-
-    card.appendChild(stepDiv);
-    welcome.appendChild(card);
-  }
-
   chatArea.appendChild(welcome);
 }
 
-function showEmptyState() {
+// ===== Onboarding Wizard =====
+async function renderOnboarding() {
   chatArea.innerHTML = '';
-  const empty = document.createElement('div');
-  empty.className = 'empty-state';
-  empty.innerHTML = ICONS.messageSquare;
+  const bbOpen = await checkBlackboardTab();
+
+  const wiz = document.createElement('div');
+  wiz.className = 'onboarding-wizard';
+  wiz.id = 'onboardingWizard';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'ob-header';
+  header.innerHTML = '<img src="../icons/logo.png" alt="">'
+    + '<h2>Welcome!</h2>'
+    + '<p>Let\u2019s get you set up in a few quick steps.</p>';
+  wiz.appendChild(header);
+
+  const steps = document.createElement('div');
+  steps.className = 'ob-steps';
+
+  // Step 1: Open Blackboard
+  const s1 = document.createElement('div');
+  s1.className = 'ob-step ' + (bbOpen ? 'done' : 'active');
+  s1.id = 'ob-step-1';
+  s1.innerHTML = '<div class="ob-step-hdr">'
+    + '<div class="ob-num">1</div>'
+    + '<div class="ob-title">Open Blackboard</div>'
+    + '<div class="ob-done-label">Connected</div>'
+    + '</div>'
+    + '<div class="ob-body">'
+    + '<p>Open Blackboard in another tab and make sure you\u2019re logged in.</p>'
+    + '<button class="ob-cta" id="obOpenBbBtn">Open Blackboard</button>'
+    + '</div>';
+  steps.appendChild(s1);
+
+  // Step 2: Scan courses
+  const s2 = document.createElement('div');
+  s2.className = 'ob-step ' + (bbOpen ? 'active' : 'waiting');
+  s2.id = 'ob-step-2';
+  s2.innerHTML = '<div class="ob-step-hdr">'
+    + '<div class="ob-num">2</div>'
+    + '<div class="ob-title">Scan your courses</div>'
+    + '<div class="ob-done-label"></div>'
+    + '</div>'
+    + '<div class="ob-body">'
+    + '<p>Finding your course materials, documents, and announcements.</p>'
+    + '<div class="progress-bar"><div class="progress-fill" id="obFill"></div></div>'
+    + '<div class="progress-text" id="obProgress">Starting\u2026</div>'
+    + '</div>';
+  steps.appendChild(s2);
+
+  // Step 3: Connect AI
+  const s3 = document.createElement('div');
+  s3.className = 'ob-step ' + (bbOpen ? 'active' : 'waiting');
+  s3.id = 'ob-step-3';
+  const info = OB_PROVIDER_INFO.deepseek;
+  s3.innerHTML = '<div class="ob-step-hdr">'
+    + '<div class="ob-num">3</div>'
+    + '<div class="ob-title">Connect an AI</div>'
+    + '<div class="ob-done-label">Connected</div>'
+    + '</div>'
+    + '<div class="ob-body">'
+    + '<p>Pick a provider and paste your secret key. <strong>DeepSeek</strong> is the cheapest \u2014 most questions cost less than a penny.</p>'
+    + '<div class="ob-provider-cards">'
+    + '<button class="ob-provider-btn selected" data-provider="deepseek">DeepSeek</button>'
+    + '<button class="ob-provider-btn" data-provider="openai">OpenAI</button>'
+    + '<button class="ob-provider-btn" data-provider="claude">Claude</button>'
+    + '</div>'
+    + '<p id="obKeyHelp">Get a key from <a href="' + info.link + '" target="_blank">' + info.label + '</a></p>'
+    + '<input type="password" class="ob-key-input" id="obKeyInput" placeholder="' + info.placeholder + '">'
+    + '<button class="ob-cta" id="obSaveKeyBtn">Save & Test</button>'
+    + '<div class="ob-status" id="obKeyStatus"></div>'
+    + '</div>';
+  steps.appendChild(s3);
+
+  wiz.appendChild(steps);
+  chatArea.appendChild(wiz);
+
+  // Event listeners
+  document.getElementById('obOpenBbBtn').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://lms.sc.tsinghua.edu.cn/' });
+    const btn = document.getElementById('obOpenBbBtn');
+    btn.textContent = 'Waiting for login\u2026';
+    btn.disabled = true;
+  });
+
+  steps.querySelectorAll('.ob-provider-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      steps.querySelectorAll('.ob-provider-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      obProvider = btn.dataset.provider;
+      const pi = OB_PROVIDER_INFO[obProvider];
+      document.getElementById('obKeyHelp').innerHTML = 'Get a key from <a href="' + pi.link + '" target="_blank">' + pi.label + '</a>';
+      document.getElementById('obKeyInput').placeholder = pi.placeholder;
+    });
+  });
+
+  document.getElementById('obSaveKeyBtn').addEventListener('click', obSaveKey);
+
+  if (bbOpen) {
+    onBlackboardDetected();
+  } else {
+    obPollInterval = setInterval(async () => {
+      if (await checkBlackboardTab()) {
+        clearInterval(obPollInterval);
+        obPollInterval = null;
+        onBlackboardDetected();
+      }
+    }, 2000);
+  }
+}
+
+async function onBlackboardDetected() {
+  const s1 = document.getElementById('ob-step-1');
+  if (s1) s1.className = 'ob-step done';
+  const s2 = document.getElementById('ob-step-2');
+  if (s2) s2.className = 'ob-step active';
+  const s3 = document.getElementById('ob-step-3');
+  if (s3 && !s3.classList.contains('done')) s3.className = 'ob-step active';
+  startCrawl({ fullRecrawl: true });
+}
+
+function updateObProgress(pages, queued, count) {
+  const fill = document.getElementById('obFill');
+  const text = document.getElementById('obProgress');
+  if (!fill || !text) return;
+  const total = pages + queued;
+  const pct = total > 0 ? Math.min(Math.round((pages / total) * 100), 95) : 0;
+  fill.style.width = pct + '%';
+  text.textContent = pct + '% \u00b7 Found ' + count + ' resources so far';
+}
+
+function onObCrawlComplete(count) {
+  const s2 = document.getElementById('ob-step-2');
+  if (!s2) return;
+  if (count > 0) {
+    s2.className = 'ob-step done';
+    const label = s2.querySelector('.ob-done-label');
+    if (label) label.textContent = count + ' resources found';
+    checkOnboardingDone();
+  } else {
+    const body = s2.querySelector('.ob-body');
+    if (body) {
+      body.innerHTML = '<p>Couldn\u2019t find any courses. Make sure you\u2019re logged in to Blackboard, then try again.</p>'
+        + '<button class="ob-cta" id="obRetryBtn">Retry</button>';
+      document.getElementById('obRetryBtn').addEventListener('click', () => {
+        body.innerHTML = '<p>Scanning again\u2026</p>'
+          + '<div class="progress-bar"><div class="progress-fill" id="obFill"></div></div>'
+          + '<div class="progress-text" id="obProgress">Starting\u2026</div>';
+        startCrawl({ fullRecrawl: true });
+      });
+    }
+  }
+}
+
+async function obSaveKey() {
+  const key = document.getElementById('obKeyInput')?.value.trim();
+  const statusEl = document.getElementById('obKeyStatus');
+  const btn = document.getElementById('obSaveKeyBtn');
+  if (!key) {
+    if (statusEl) { statusEl.textContent = 'Please enter a key.'; statusEl.className = 'ob-status error'; }
+    return;
+  }
+  const model = defaultModels[obProvider];
+  btn.disabled = true;
+  btn.textContent = 'Testing\u2026';
+  try {
+    const client = new LLMClient(obProvider, key, model);
+    const result = await client.validate();
+    if (result.valid) {
+      await chrome.storage.local.set({ settings: { provider: obProvider, apiKey: key, model } });
+      settings = { provider: obProvider, apiKey: key, model };
+      updateInputState();
+      if (statusEl) { statusEl.textContent = 'Connected!'; statusEl.className = 'ob-status success'; }
+      const s3 = document.getElementById('ob-step-3');
+      if (s3) s3.className = 'ob-step done';
+      checkOnboardingDone();
+    } else {
+      if (statusEl) { statusEl.textContent = result.message || 'Connection failed. Check your key.'; statusEl.className = 'ob-status error'; }
+    }
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = 'Failed: ' + err.message; statusEl.className = 'ob-status error'; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save & Test';
+  }
+}
+
+async function checkOnboardingDone() {
+  const s2 = document.getElementById('ob-step-2');
+  const s3 = document.getElementById('ob-step-3');
+  if (!s2 || !s3) return;
+  if (s2.classList.contains('done') && s3.classList.contains('done')) {
+    await chrome.storage.local.set({ onboarding_state: { completed: true } });
+    await new Promise(r => setTimeout(r, 600));
+    renderWelcomeOrEmpty();
+  }
+}
+
+// ===== Indexing Screen (first-time crawl) =====
+function showIndexingScreen() {
+  chatArea.innerHTML = '';
+  const screen = document.createElement('div');
+  screen.className = 'indexing-screen';
+  screen.id = 'indexingScreen';
+
+  const logo = document.createElement('img');
+  logo.src = '../icons/logo.png';
+  logo.alt = '';
+  logo.className = 'indexing-logo';
+  screen.appendChild(logo);
+
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Indexing your Blackboard...';
+  screen.appendChild(h2);
+
   const p = document.createElement('p');
-  p.textContent = 'Chat cleared. Ask a new question.';
-  empty.appendChild(p);
-  chatArea.appendChild(empty);
+  p.textContent = 'Scanning courses, resources, and announcements';
+  screen.appendChild(p);
+
+  const bar = document.createElement('div');
+  bar.className = 'progress-bar';
+  const fill = document.createElement('div');
+  fill.className = 'progress-fill';
+  fill.id = 'indexingFill';
+  bar.appendChild(fill);
+  screen.appendChild(bar);
+
+  const pct = document.createElement('div');
+  pct.className = 'progress-text';
+  pct.id = 'indexingText';
+  pct.textContent = '0%';
+  screen.appendChild(pct);
+
+  chatArea.appendChild(screen);
+}
+
+function updateIndexingProgress(pages, queued, resourceCount) {
+  const fill = document.getElementById('indexingFill');
+  const text = document.getElementById('indexingText');
+  if (!fill || !text) return;
+  const total = pages + queued;
+  const pct = total > 0 ? Math.min(Math.round((pages / total) * 100), 95) : 0;
+  fill.style.width = pct + '%';
+  text.textContent = `${pct}% \u00b7 ${resourceCount} resources found`;
 }
 
 // ===== Time helper =====
@@ -296,7 +553,7 @@ function renderMarkdown(text) {
 }
 
 // ===== Messages =====
-function addMessage(role, content, cards = null) {
+function addMessage(role, content, cards = null, showAllResults = false) {
   const welcome = chatArea.querySelector('.welcome-screen');
   if (welcome) welcome.remove();
   const empty = chatArea.querySelector('.empty-state');
@@ -334,87 +591,141 @@ function addMessage(role, content, cards = null) {
     }
 
     if (cards && cards.length > 0) {
-      const best = cards[0];
-      const alts = cards.slice(1);
-      const bestIsFile = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|csv|txt)($|\?)/i.test(best.url) ||
-                         /bbcswebdav|@X@/i.test(best.url);
+      if (showAllResults && cards.length > 1) {
+        // — Show all results prominently (e.g. both academic calendars) —
+        const section = document.createElement('div');
+        section.className = 'best-match-section';
 
-      // — Best match section —
-      const bestSection = document.createElement('div');
-      bestSection.className = 'best-match-section';
+        const heading = document.createElement('div');
+        heading.className = 'best-match-heading';
+        heading.textContent = 'Top results';
+        section.appendChild(heading);
 
-      const bestHeading = document.createElement('div');
-      bestHeading.className = 'best-match-heading';
-      bestHeading.textContent = 'Best match';
-      bestSection.appendChild(bestHeading);
+        for (const card of cards) {
+          const isFile = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|csv|txt)($|\?)/i.test(card.url) ||
+                         /bbcswebdav|@X@/i.test(card.url);
 
-      const bestCard = document.createElement('div');
-      bestCard.className = 'resource-card best-match';
-      bestCard.role = 'button';
-      bestCard.tabIndex = 0;
-      bestCard.addEventListener('click', () => navigateToResource(best.url, bestIsFile));
-      bestCard.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToResource(best.url, bestIsFile); }
-      });
+          const cardEl = document.createElement('div');
+          cardEl.className = 'resource-card best-match';
+          cardEl.role = 'button';
+          cardEl.tabIndex = 0;
+          cardEl.addEventListener('click', () => navigateToResource(card.url, isFile));
+          cardEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToResource(card.url, isFile); }
+          });
 
-      const bestIcon = document.createElement('div');
-      bestIcon.className = `icon-circle ${best.type || 'link'}`;
-      bestIcon.innerHTML = typeIconSvg(best.type);
-      bestCard.appendChild(bestIcon);
+          const iconCircle = document.createElement('div');
+          iconCircle.className = `icon-circle ${card.type || 'link'}`;
+          iconCircle.innerHTML = typeIconSvg(card.type);
+          cardEl.appendChild(iconCircle);
 
-      const bestInfo = document.createElement('div');
-      bestInfo.className = 'info';
-      const bestTitle = document.createElement('div');
-      bestTitle.className = 'title';
-      bestTitle.textContent = best.title;
-      bestInfo.appendChild(bestTitle);
-      const bestMeta = document.createElement('span');
-      bestMeta.className = 'type-badge';
-      bestMeta.textContent = typeLabel(best.type);
-      bestInfo.appendChild(bestMeta);
-      bestCard.appendChild(bestInfo);
+          const infoDiv = document.createElement('div');
+          infoDiv.className = 'info';
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'title';
+          titleDiv.textContent = card.title;
+          infoDiv.appendChild(titleDiv);
+          const metaBadge = document.createElement('span');
+          metaBadge.className = 'type-badge';
+          metaBadge.textContent = typeLabel(card.type);
+          infoDiv.appendChild(metaBadge);
+          cardEl.appendChild(infoDiv);
 
-      const bestChevron = document.createElement('span');
-      bestChevron.className = 'card-action';
-      bestChevron.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
-      bestCard.appendChild(bestChevron);
-      bestSection.appendChild(bestCard);
+          const chevron = document.createElement('span');
+          chevron.className = 'card-action';
+          chevron.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+          cardEl.appendChild(chevron);
 
-      // Description below the card
-      if (best.reason) {
-        const bestDesc = document.createElement('p');
-        bestDesc.className = 'best-match-desc';
-        bestDesc.textContent = best.reason;
-        bestSection.appendChild(bestDesc);
-      }
+          section.appendChild(cardEl);
 
-      div.appendChild(bestSection);
+          if (card.reason) {
+            const desc = document.createElement('p');
+            desc.className = 'best-match-desc';
+            desc.textContent = card.reason;
+            section.appendChild(desc);
+          }
+        }
 
-      // — "Search again" button + alternatives —
-      const altsWrapper = document.createElement('div');
-      altsWrapper.className = 'alternatives-wrapper';
-
-      const findAgainBtn = document.createElement('button');
-      findAgainBtn.className = 'find-again-btn';
-      findAgainBtn.textContent = 'Not what you need? Search again';
-
-      if (alts.length > 0) {
-        // Alternatives already available — just reveal them
-        const altsDiv = _buildAltCards(alts);
-        altsWrapper.appendChild(findAgainBtn);
-        altsWrapper.appendChild(altsDiv);
-        findAgainBtn.addEventListener('click', () => {
-          altsWrapper.classList.add('expanded');
-          findAgainBtn.style.display = 'none';
-          chatArea.scrollTop = chatArea.scrollHeight;
-        });
+        div.appendChild(section);
       } else {
-        // No alternatives — fetch them on click
-        altsWrapper.appendChild(findAgainBtn);
-        findAgainBtn.addEventListener('click', () => _fetchAlternatives(best, altsWrapper, findAgainBtn));
-      }
+        // — Standard: best match + alternatives —
+        const best = cards[0];
+        const alts = cards.slice(1);
+        const bestIsFile = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|csv|txt)($|\?)/i.test(best.url) ||
+                           /bbcswebdav|@X@/i.test(best.url);
 
-      div.appendChild(altsWrapper);
+        const bestSection = document.createElement('div');
+        bestSection.className = 'best-match-section';
+
+        const bestHeading = document.createElement('div');
+        bestHeading.className = 'best-match-heading';
+        bestHeading.textContent = 'Best match';
+        bestSection.appendChild(bestHeading);
+
+        const bestCard = document.createElement('div');
+        bestCard.className = 'resource-card best-match';
+        bestCard.role = 'button';
+        bestCard.tabIndex = 0;
+        bestCard.addEventListener('click', () => navigateToResource(best.url, bestIsFile));
+        bestCard.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToResource(best.url, bestIsFile); }
+        });
+
+        const bestIcon = document.createElement('div');
+        bestIcon.className = `icon-circle ${best.type || 'link'}`;
+        bestIcon.innerHTML = typeIconSvg(best.type);
+        bestCard.appendChild(bestIcon);
+
+        const bestInfo = document.createElement('div');
+        bestInfo.className = 'info';
+        const bestTitle = document.createElement('div');
+        bestTitle.className = 'title';
+        bestTitle.textContent = best.title;
+        bestInfo.appendChild(bestTitle);
+        const bestMeta = document.createElement('span');
+        bestMeta.className = 'type-badge';
+        bestMeta.textContent = typeLabel(best.type);
+        bestInfo.appendChild(bestMeta);
+        bestCard.appendChild(bestInfo);
+
+        const bestChevron = document.createElement('span');
+        bestChevron.className = 'card-action';
+        bestChevron.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+        bestCard.appendChild(bestChevron);
+        bestSection.appendChild(bestCard);
+
+        if (best.reason) {
+          const bestDesc = document.createElement('p');
+          bestDesc.className = 'best-match-desc';
+          bestDesc.textContent = best.reason;
+          bestSection.appendChild(bestDesc);
+        }
+
+        div.appendChild(bestSection);
+
+        const altsWrapper = document.createElement('div');
+        altsWrapper.className = 'alternatives-wrapper';
+
+        const findAgainBtn = document.createElement('button');
+        findAgainBtn.className = 'find-again-btn';
+        findAgainBtn.textContent = 'Not what you need? Search again';
+
+        if (alts.length > 0) {
+          const altsDiv = _buildAltCards(alts);
+          altsWrapper.appendChild(findAgainBtn);
+          altsWrapper.appendChild(altsDiv);
+          findAgainBtn.addEventListener('click', () => {
+            altsWrapper.classList.add('expanded');
+            findAgainBtn.style.display = 'none';
+            chatArea.scrollTop = chatArea.scrollHeight;
+          });
+        } else {
+          altsWrapper.appendChild(findAgainBtn);
+          findAgainBtn.addEventListener('click', () => _fetchAlternatives(best, altsWrapper, findAgainBtn));
+        }
+
+        div.appendChild(altsWrapper);
+      }
     }
   }
 
@@ -612,8 +923,12 @@ async function sendQuery() {
     const client = new LLMClient(settings.provider, settings.apiKey, settings.model);
     activeClient = client;
 
-    // Local pre-filter
-    const candidates = searchResources(query, resources);
+    // Detect query intent for smart routing
+    const intent = detectIntent(query, resources);
+
+    // Local pre-filter + intent boosting
+    let candidates = searchResources(query, resources);
+    candidates = applyIntentBoosting(candidates, intent);
 
     // Fetch stored content for top candidates (RAG)
     const topCandidates = candidates.slice(0, 20);
@@ -635,9 +950,14 @@ async function sendQuery() {
     }
 
     // Build system prompt (uses RAG if content available, falls back to resource list)
-    const systemPrompt = contentSnippets.length > 0
+    let systemPrompt = contentSnippets.length > 0
       ? buildConversationalPrompt(contentSnippets)
       : buildSystemPrompt(candidates, resources.length, contentSnippets);
+
+    // Append intent-specific instructions
+    if (intent.promptHint) {
+      systemPrompt += '\n\nSPECIAL INSTRUCTION: ' + intent.promptHint;
+    }
 
     // Add user message to conversation history
     conversationMessages.push({ role: 'user', content: query });
@@ -655,7 +975,7 @@ async function sendQuery() {
 
     const { text, cards } = parseResponse(response);
     loadingEl.remove();
-    addMessage('bot', text, cards);
+    addMessage('bot', text, cards, intent.showAllResults);
 
     await saveChatMessage('user', query);
     await saveChatMessage('bot', response);
@@ -769,9 +1089,36 @@ queryInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     sendQuery();
   }
+  // Shift+Enter: continue bullet on next line
+  if (e.key === 'Enter' && e.shiftKey) {
+    const pos = queryInput.selectionStart;
+    const val = queryInput.value;
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+    const line = val.slice(lineStart, pos);
+    const bulletMatch = line.match(/^(\u2022 )/);
+    if (bulletMatch) {
+      e.preventDefault();
+      const insert = '\n\u2022 ';
+      queryInput.value = val.slice(0, pos) + insert + val.slice(pos);
+      queryInput.selectionStart = queryInput.selectionEnd = pos + insert.length;
+      queryInput.dispatchEvent(new Event('input'));
+    }
+  }
 });
 
 queryInput.addEventListener('input', () => {
+  // Auto-bullet: replace "* " or "- " at start of a line with "• "
+  const pos = queryInput.selectionStart;
+  const val = queryInput.value;
+  const before = val.slice(0, pos);
+  if (before.endsWith('* ') || before.endsWith('- ')) {
+    const lineStart = before.lastIndexOf('\n', pos - 3) + 1;
+    const linePrefix = before.slice(lineStart, pos);
+    if (linePrefix === '* ' || linePrefix === '- ') {
+      queryInput.value = val.slice(0, pos - 2) + '\u2022 ' + val.slice(pos);
+      queryInput.selectionStart = queryInput.selectionEnd = pos;
+    }
+  }
   queryInput.style.height = 'auto';
   queryInput.style.height = Math.min(queryInput.scrollHeight, 80) + 'px';
 });
@@ -828,6 +1175,8 @@ async function startCrawl({ fullRecrawl = false } = {}) {
       } else {
         statusDot.classList.add('active');
         statusText.textContent = `Scanning... ${pages} pages, ${count} resources (${queued} queued)`;
+        updateIndexingProgress(pages, queued, count);
+        updateObProgress(pages, queued, count);
       }
     },
     onFlush: async (batch) => {
@@ -848,10 +1197,28 @@ async function startCrawl({ fullRecrawl = false } = {}) {
     await crawler.crawl(seeds, { fullRecrawl });
     await loadIndex();
 
+    // If indexing screen was showing, animate to 100% before transitioning
+    const wasIndexing = !!document.getElementById('indexingScreen');
+    if (wasIndexing) {
+      const fill = document.getElementById('indexingFill');
+      const text = document.getElementById('indexingText');
+      if (fill) fill.style.width = '100%';
+      if (text) text.textContent = `Done! ${resources.length} resources indexed`;
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    // Handle onboarding wizard completion
+    const inOnboarding = !!document.getElementById('onboardingWizard');
+    if (inOnboarding) {
+      onObCrawlComplete(resources.length);
+    }
+
     // Post-crawl: extract PDF content for file resources
     extractPdfContentForResources();
 
-    renderWelcomeOrEmpty();
+    if (!inOnboarding) {
+      renderWelcomeOrEmpty();
+    }
   } catch (err) {
     addMessage('error', `Scan failed: ${err.message}`);
   } finally {
@@ -1123,7 +1490,7 @@ clearChatBtn.addEventListener('click', async () => {
   if (!confirm('Clear all chat history?')) return;
   await chrome.storage.local.set({ chat_history: [] });
   conversationMessages = [];
-  showEmptyState();
+  renderWelcomeOrEmpty();
   showStatus(statusMessageEl, 'Chat cleared.', 'success');
 });
 
@@ -1135,6 +1502,9 @@ chrome.storage.onChanged.addListener((changes) => {
   }
   if (changes.resource_index || changes.index_meta) {
     loadIndex();
+  }
+  if (changes.theme) {
+    applyTheme(changes.theme.newValue);
   }
 });
 
