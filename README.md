@@ -9,11 +9,11 @@
 Natural language search and AI-powered Q&A across all your Blackboard LMS resources at Schwarzman College, Tsinghua University. Ask questions in plain English, get answers grounded in your actual course materials.
 
 <p align="center">
-  <img src="assets/chat-dark.png" alt="Chat — Dark Mode" width="240" />
+  <img src="assets/chat-dark.png" alt="Chat — Dark Mode" width="260" />
   &nbsp;
-  <img src="assets/chat-light.png" alt="Chat — Light Mode" width="240" />
+  <img src="assets/chat-light.png" alt="Chat — Light Mode" width="260" />
   &nbsp;
-  <img src="assets/settings.png" alt="Settings" width="240" />
+  <img src="assets/settings.png" alt="Settings" width="260" />
 </p>
 
 ## What it does
