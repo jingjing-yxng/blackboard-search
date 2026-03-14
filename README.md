@@ -9,11 +9,11 @@
 Natural language search and AI-powered Q&A across all your Blackboard LMS resources at Schwarzman College, Tsinghua University. Ask questions in plain English, get answers grounded in your actual course materials.
 
 <p align="center">
-  <img src="assets/chat-dark.png" alt="Chat — Dark Mode" width="275" />
+  <img src="assets/chat-dark.png" alt="Chat — Dark Mode" width="200" />
   &nbsp;
-  <img src="assets/chat-light.png" alt="Chat — Light Mode" width="275" />
+  <img src="assets/chat-light.png" alt="Chat — Light Mode" width="200" />
   &nbsp;
-  <img src="assets/settings.png" alt="Settings" width="275" />
+  <img src="assets/settings.png" alt="Settings" width="200" />
 </p>
 
 ## What it does
@@ -27,6 +27,9 @@ Natural language search and AI-powered Q&A across all your Blackboard LMS resour
 
 ## Install
 
+**[Install from Chrome Web Store](https://chromewebstore.google.com/detail/sc-blackboard-assistant/bcohnomkhpaneoehahiacdplpnnlnloa)**
+
+Or load manually:
 1. Clone this repo
 2. Go to `chrome://extensions` → enable **Developer mode**
 3. Click **Load unpacked** → select the `blackboard-search` folder
