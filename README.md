@@ -8,6 +8,14 @@
 
 Natural language search and AI-powered Q&A across all your Blackboard LMS resources at Schwarzman College, Tsinghua University. Ask questions in plain English, get answers grounded in your actual course materials.
 
+<p align="center">
+  <img src="assets/chat-dark.png" alt="Chat — Dark Mode" width="280" />
+  &nbsp;&nbsp;
+  <img src="assets/chat-light.png" alt="Chat — Light Mode" width="280" />
+  &nbsp;&nbsp;
+  <img src="assets/settings.png" alt="Settings" width="280" />
+</p>
+
 ## What it does
 
 - **Crawls your Blackboard** — automatically indexes all pages, PDFs, documents, announcements, and course content across every course you're enrolled in (up to 5,000 pages)
